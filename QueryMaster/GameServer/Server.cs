@@ -1,4 +1,4 @@
-﻿
+
 #region License
 /*
 Copyright (c) 2015 Betson Roy
@@ -36,6 +36,8 @@ using System.Net.Sockets;
 using QueryMaster;
 using System.Threading;
 using System.Globalization;
+using ICSharpCode.SharpZipLib.Zip;
+using System.Linq.Expressions;
 
 namespace QueryMaster.GameServer
 {
@@ -52,6 +54,10 @@ namespace QueryMaster.GameServer
         private bool IsPlayerChallengeId;
         private bool IsRuleChallengeId;
         private Rcon rcon = null;
+
+        // Challenge Settings
+        private int ChallengeAttempt = 0;
+        private static int ChallengeAttemptMax = 3;
 
         internal UdpQuery UdpSocket =null;
         internal ConnectionInfo ConInfo = null;
@@ -131,7 +137,7 @@ namespace QueryMaster.GameServer
                     Query = QueryMsg.ObsoleteInfoQuery;
 
                 recvData = new byte[UdpSocket.BufferSize];
-
+                HandleChallenge:
                 Stopwatch sw = Stopwatch.StartNew();
                 recvData = UdpSocket.GetResponse(Query, Type);
                 sw.Stop();
@@ -140,7 +146,12 @@ namespace QueryMaster.GameServer
                 {
                     case 0x49: serverInfo = Current(recvData); break;
                     case 0x6D: serverInfo = Obsolete(recvData); break;
-                    default: throw new InvalidHeaderException("packet header is not valid");
+                    case 0x41:
+                        Query = Query.Concat(recvData.Skip(1)).ToArray(); // Append challenge bytes
+                        if (ChallengeAttempt > ChallengeAttemptMax) { throw new ParseException("Failed to complete challenge"); }
+                        ChallengeAttempt++;
+                        goto HandleChallenge;
+                    default: throw new InvalidHeaderException("Packet header(Byte 4) is not valid");
                 }
             }
             catch (Exception e)
